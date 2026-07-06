@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DSO / FFT Bench</title>
+<style>
+  :root{
+    --bezel:#17191d;
+    --bezel-2:#1f2227;
+    --bezel-edge:#0c0d0f;
+    --screen-bg:#050a08;
+    --grid:rgba(70,200,160,0.14);
+    --grid-major:rgba(70,200,160,0.32);
+    --grid-axis:rgba(130,235,195,0.55);
+    --ch1:#f4d03f;
+    --ch2:#35d7e0;
+    --ch3:#ff6ec7;
+    --ch4:#8ef58a;
+    --text:#e7ecef;
+    --text-dim:#818b90;
+    --accent:#35d7e0;
+    --danger:#ff5d5d;
+    --amber:#f4a63f;
+    --mono: ui-monospace, 'SF Mono', 'Roboto Mono', Menlo, Consolas, monospace;
+    --sans: -apple-system, 'Inter', system-ui, Segoe UI, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0; background:var(--bezel-edge); color:var(--text);
+    font-family:var(--sans);
+    display:flex; flex-direction:column; min-height:100vh;
+  }
+  .topbar{
+    display:flex; align-items:center; gap:14px;
+    padding:10px 16px; background:linear-gradient(180deg,#1c1f24,#15171a);
+    border-bottom:1px solid #000; flex-wrap:wrap;
+  }
+  .brand{font-family:var(--mono); font-weight:700; letter-spacing:2px; font-size:13px; color:var(--accent); text-transform:uppercase;}
+  .brand span{color:var(--text-dim); font-weight:400; letter-spacing:1px;}
+  .filebtn{
+    background:var(--bezel-2); border:1px solid #34383f; color:var(--text);
+    padding:7px 12px; border-radius:4px; font-family:var(--mono); font-size:12px;
+    cursor:pointer; display:flex; align-items:center; gap:6px;
+  }
+  .filebtn:hover{border-color:var(--accent); color:var(--accent);}
+  .status{font-family:var(--mono); font-size:11px; color:var(--text-dim); margin-left:auto; display:flex; gap:16px; flex-wrap:wrap;}
+  .status b{color:var(--text);}
+  .layout{display:flex; flex:1; min-height:0;}
+  .panel{
+    width:270px; flex-shrink:0; background:var(--bezel);
+    border-right:1px solid #000; padding:12px; overflow-y:auto;
+  }
+  .group{
+    background:var(--bezel-2); border:1px solid #2a2d33; border-radius:6px;
+    padding:10px; margin-bottom:10px;
+  }
+  .group h3{
+    margin:0 0 8px 0; font-size:10px; letter-spacing:1.5px; text-transform:uppercase;
+    color:var(--text-dim); font-family:var(--mono); display:flex; justify-content:space-between; align-items:center;
+  }
+  .chrow{display:flex; align-items:center; gap:6px; margin-bottom:4px; padding:4px 6px; border-radius:4px; border:1px solid transparent; cursor:pointer;}
+  .chrow:hover{background:#22262c;}
+  .chrow.selected{background:#123c33; border-color:var(--accent);}
+  .chdot{width:9px; height:9px; border-radius:50%; flex-shrink:0;}
+  .chname{font-family:var(--mono); font-size:11px; flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .invbtn{
+    font-family:var(--mono); font-size:9px; padding:2px 5px; border-radius:3px;
+    background:#22262c; border:1px solid #34383f; color:var(--text-dim); flex-shrink:0;
+  }
+  .invbtn.on{background:#3a1f1f; border-color:var(--danger); color:var(--danger);}
+  .ch-toggle{
+    width:32px; height:16px; border-radius:9px; background:#33363c; position:relative; cursor:pointer; flex-shrink:0; border:1px solid #000;
+  }
+  .ch-toggle.on{background:#1c4a3d;}
+  .ch-toggle::after{
+    content:''; position:absolute; width:12px; height:12px; border-radius:50%; background:#888; top:1px; left:1px; transition:left .15s;
+  }
+  .ch-toggle.on::after{left:17px; background:var(--accent);}
+  .ctrl-line{display:flex; align-items:center; justify-content:space-between; gap:6px; margin:6px 0;}
+  .ctrl-line label{font-size:10.5px; color:var(--text-dim); font-family:var(--mono);}
+  .knob-wrap{display:flex; flex-direction:column; align-items:center; gap:3px; width:64px;}
+  .knob{
+    width:44px; height:44px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #3a3f47, #17191d 70%);
+    border:1px solid #000; box-shadow:0 2px 4px #000, inset 0 0 0 1px #45494f;
+    position:relative; cursor:ns-resize; user-select:none;
+  }
+  .knob::after{
+    content:''; position:absolute; width:2px; height:16px; background:var(--accent);
+    top:3px; left:50%; transform-origin:50% 19px; transform:translateX(-50%) rotate(var(--ang,0deg));
+    border-radius:1px;
+  }
+  .knob-val{font-family:var(--mono); font-size:10.5px; color:var(--text); white-space:nowrap;}
+  .miniinput{
+    width:100%; background:#0e1013; border:1px solid #2f333a; color:var(--text);
+    font-family:var(--mono); font-size:11px; padding:4px 6px; border-radius:3px;
+  }
+  select.miniinput{cursor:pointer;}
+  .btnrow{display:flex; gap:6px; flex-wrap:wrap;}
+  .btn{
+    background:#22262c; border:1px solid #34383f; color:var(--text); font-family:var(--mono);
+    font-size:10.5px; padding:6px 8px; border-radius:4px; cursor:pointer; flex:1; text-align:center;
+  }
+  .btn:hover{border-color:var(--accent); color:var(--accent);}
+  .btn.active{background:#123c33; border-color:var(--accent); color:var(--accent);}
+  .btn.danger:hover{border-color:var(--danger); color:var(--danger);}
+  .checkline{display:flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10.5px; color:var(--text-dim); margin:4px 0;}
+  .checkline input{accent-color:var(--accent);}
+  .main{flex:1; display:flex; flex-direction:column; min-width:0; background:var(--bezel-edge); padding:12px; gap:10px; overflow-y:auto;}
+  .tabs{display:flex; gap:4px;}
+  .tab{
+    font-family:var(--mono); font-size:11px; padding:7px 16px; border-radius:5px 5px 0 0;
+    background:#1c1f24; color:var(--text-dim); cursor:pointer; border:1px solid #000; border-bottom:none;
+  }
+  .tab.active{background:var(--screen-bg); color:var(--accent);}
+  .screenbox{
+    background:var(--screen-bg); border:1px solid #000; border-radius:2px 8px 8px 8px;
+    box-shadow:inset 0 0 40px rgba(0,0,0,0.7), 0 0 0 1px #2a2d33;
+    padding:6px; position:relative;
+  }
+  canvas{display:block; width:100%; touch-action:none;}
+  .dropzone{
+    position:absolute; inset:6px; display:flex; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px; color:var(--text-dim); font-family:var(--mono); font-size:12px;
+    border:1px dashed #2a2d33; border-radius:4px; text-align:center; pointer-events:none;
+  }
+  .dropzone b{color:var(--accent); font-size:13px;}
+  .readouts{
+    display:flex; gap:10px; flex-wrap:wrap; font-family:var(--mono); font-size:11px;
+    background:var(--bezel); border:1px solid #2a2d33; border-radius:6px; padding:8px 12px;
+  }
+  .ro{color:var(--text-dim);} .ro b{color:var(--text); font-weight:600;}
+  table.meas{width:100%; border-collapse:collapse; font-family:var(--mono); font-size:11px;}
+  table.meas th{text-align:left; color:var(--text-dim); font-weight:500; padding:5px 8px; border-bottom:1px solid #2a2d33;}
+  table.meas td{padding:5px 8px; border-bottom:1px solid #1d1f23;}
+  .swatch{width:8px; height:8px; border-radius:2px; display:inline-block; margin-right:6px;}
+  .hint{font-size:10px; color:var(--text-dim); font-family:var(--mono); line-height:1.5; margin-top:4px;}
+  input[type=range]{accent-color:var(--accent); width:100%;}
+  ::-webkit-scrollbar{width:8px; height:8px;} ::-webkit-scrollbar-thumb{background:#2f333a; border-radius:4px;}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="brand">DSO<span>·BENCH</span></div>
+  <label class="filebtn">
+    ⏏ Load CSV
+    <input type="file" id="fileInput" accept=".csv,text/csv" style="display:none;">
+  </label>
+  <button class="filebtn" id="demoBtn">▶ Demo signal</button>
+  <div class="status" id="statusBar">
+    <span>No data loaded</span>
+  </div>
+</div>
+
+<div class="layout">
+  <div class="panel">
+    <div class="group">
+      <h3>Channels</h3>
+      <div id="chanList"></div>
+    </div>
+
+    <div class="group" id="vertGroup">
+      <h3>Vertical <span id="vertChLabel">CH1</span></h3>
+      <div class="ctrl-line">
+        <div class="knob-wrap">
+          <div class="knob" id="voltsKnob"></div>
+          <div class="knob-val" id="voltsVal">1 V/div</div>
+          <div style="font-size:9px;color:var(--text-dim)">VOLTS/DIV <span id="voltsUncal" style="display:none;color:var(--amber);font-weight:700;">● VAR</span></div>
+        </div>
+        <div class="knob-wrap">
+          <div class="knob" id="offsetKnob"></div>
+          <div class="knob-val" id="offsetVal">0.00 div</div>
+          <div style="font-size:9px;color:var(--text-dim)">POSITION</div>
+        </div>
+      </div>
+      <div class="checkline"><input type="checkbox" id="invertChk"><label for="invertChk">Invert</label></div>
+      <div class="btnrow" style="margin-top:6px;">
+        <button class="btn" id="fineModeBtn">Fine adjust</button>
+      </div>
+      <div class="hint">Drag a knob up/down, or scroll over it. Turn on Fine adjust for smaller steps per move.</div>
+    </div>
+
+    <div class="group" id="phaseGroup">
+      <h3>Phase / Skew <span id="phaseChLabel">CH1</span></h3>
+      <div class="ctrl-line">
+        <div class="knob-wrap">
+          <div class="knob" id="shiftKnob"></div>
+          <div class="knob-val" id="shiftVal">0 µs</div>
+          <div style="font-size:9px;color:var(--text-dim)">TIME SHIFT</div>
+        </div>
+        <div style="flex:1">
+          <div class="hint" id="shiftDegInfo">≈ 0.0° @ 1.000 kHz</div>
+          <div class="btnrow" style="margin-top:6px;"><button class="btn" id="shiftResetBtn">Reset to 0</button></div>
+        </div>
+      </div>
+      <div class="hint">Positive shift delays this channel (moves it later in time). Useful for compensating known probe/sensor lag between channels.</div>
+    </div>
+
+
+    <div class="group">
+      <h3>Horizontal</h3>
+      <div class="ctrl-line">
+        <div class="knob-wrap">
+          <div class="knob" id="timeKnob"></div>
+          <div class="knob-val" id="timeVal">1 ms/div</div>
+          <div style="font-size:9px;color:var(--text-dim)">TIME/DIV</div>
+        </div>
+        <div style="flex:1">
+          <label>Position</label>
+          <input type="range" id="hposSlider" min="0" max="1" step="0.001" value="0.5">
+        </div>
+      </div>
+      <div class="btnrow"><button class="btn" id="autoscaleBtn">Autoscale</button><button class="btn" id="resetBtn">Reset view</button></div>
+    </div>
+
+    <div class="group">
+      <h3>Trigger</h3>
+      <div class="ctrl-line">
+        <label>Channel</label>
+        <select id="trigChan" class="miniinput" style="width:80px"></select>
+      </div>
+      <div class="ctrl-line">
+        <label>Edge</label>
+        <div class="btnrow">
+          <button class="btn active" id="trigRise">Rising</button>
+          <button class="btn" id="trigFall">Falling</button>
+        </div>
+      </div>
+      <div class="ctrl-line">
+        <label>Level</label>
+        <input type="range" id="trigLevelSlider" min="-5" max="5" step="0.01" value="0">
+      </div>
+      <div class="btnrow"><button class="btn" id="trigFindBtn">Find edge ▸</button></div>
+    </div>
+
+    <div class="group">
+      <h3>Cursors</h3>
+      <div class="checkline"><input type="checkbox" id="timeCursorChk"><label for="timeCursorChk">Time cursors (T1/T2)</label></div>
+      <div class="checkline"><input type="checkbox" id="voltCursorChk"><label for="voltCursorChk">Voltage cursors (V1/V2)</label></div>
+      <div class="hint">Drag cursor lines directly on screen once enabled.</div>
+    </div>
+
+    <div class="group" id="fftGroup">
+      <h3>FFT / Math</h3>
+      <div class="ctrl-line">
+        <label>Source</label>
+        <select id="fftChan" class="miniinput" style="width:80px"></select>
+      </div>
+      <div class="ctrl-line">
+        <label>Window</label>
+        <select id="fftWindow" class="miniinput" style="width:100px">
+          <option value="hann">Hann</option>
+          <option value="hamming">Hamming</option>
+          <option value="blackman">Blackman</option>
+          <option value="rect">Rectangular</option>
+        </select>
+      </div>
+      <div class="ctrl-line">
+        <label>Scale</label>
+        <div class="btnrow">
+          <button class="btn active" id="fftDbBtn">dB</button>
+          <button class="btn" id="fftLinBtn">Linear</button>
+        </div>
+      </div>
+      <div class="ctrl-line">
+        <label>Peaks to label</label>
+        <input type="number" id="fftPeakCount" class="miniinput" style="width:60px" min="0" max="15" step="1" value="3">
+      </div>
+      <div class="ctrl-line">
+        <label>F min (Hz)</label>
+        <input type="number" id="fftFMin" class="miniinput" style="width:90px" value="0" step="any">
+      </div>
+      <div class="ctrl-line">
+        <label>F max (Hz)</label>
+        <input type="number" id="fftFMax" class="miniinput" style="width:90px" placeholder="Nyquist" step="any">
+      </div>
+      <div class="btnrow"><button class="btn" id="fftFullRangeBtn">Full range</button></div>
+      <div class="hint">Drag to pan, scroll to zoom on the FFT screen. F max acts as a cutoff, e.g. set 5000 to view 0–5 kHz.</div>
+      <div class="hint" id="fftInfo">—</div>
+    </div>
+  </div>
+
+  <div class="main">
+    <div class="tabs">
+      <div class="tab active" data-view="dso">Waveform</div>
+      <div class="tab" data-view="fft">FFT</div>
+      <div class="tab" data-view="both">Split</div>
+    </div>
+
+    <div class="screenbox" id="dsoBox">
+      <canvas id="dsoCanvas" height="520"></canvas>
+      <div class="dropzone" id="dropzone"><b>Drop CSV here</b>or click "Load CSV" above<br>(or try the Demo signal)</div>
+    </div>
+
+    <div class="screenbox" id="fftBox" style="display:none;">
+      <canvas id="fftCanvas" height="360"></canvas>
+    </div>
+
+    <div class="group" id="peaksGroup" style="display:none; background:var(--bezel);">
+      <h3>Detected peaks <span id="peaksSubtitle" style="color:var(--text-dim); font-weight:400;"></span></h3>
+      <table class="meas" id="peaksTable">
+        <thead><tr><th>#</th><th>Frequency</th><th>Amplitude</th><th>Level (dB)</th></tr></thead>
+        <tbody id="peaksBody"></tbody>
+      </table>
+    </div>
+
+    <div class="readouts" id="cursorReadout" style="display:none;"></div>
+
+    <div class="group" style="background:var(--bezel);">
+      <h3>Automatic measurements <span style="color:var(--text-dim); font-weight:400;">(visible window)</span></h3>
+      <table class="meas" id="measTable">
+        <thead><tr><th>Ch</th><th>Min</th><th>Max</th><th>Pk-Pk</th><th>Mean</th><th>RMS</th><th>Freq</th><th>Period</th></tr></thead>
+        <tbody id="measBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+const CH_COLORS = ['#f4d03f','#35d7e0','#ff6ec7','#8ef58a','#c9a0ff','#ff9d5c'];
+const VOLT_STEPS = [0.001,0.002,0.005,0.01,0.02,0.05,0.1,0.2,0.5,1,2,5,10,20,50];
+const TIME_STEPS = [1e-6,2e-6,5e-6,10e-6,20e-6,50e-6,100e-6,200e-6,500e-6,
+                    1e-3,2e-3,5e-3,10e-3,20e-3,50e-3,100e-3,200e-3,500e-3,
+                    1,2,5,10,20,50];
+
+// ---------- state ----------
+let data = null; // { t: Float64Array, channels:[{name,unit,values:Float64Array}] }
+let chState = []; // per-channel: {enabled, voltsPerDiv, offsetDiv, invert, color}
+let activeVertCh = 0;
+let timePerDiv = 1e-3;
+let hPositionSec = 0; // center time shown on screen
+let view = 'dso';
+let trig = { chan:0, edge:'rise', level:0 };
+let cursors = { time:{enabled:false, t1:0.25, t2:0.75}, volt:{enabled:false, v1:1.5, v2:-1.5} };
+let fftCfg = { chan:0, window:'hann', scale:'db', peakCount:3 };
+let fftView = { fMin:0, fMax:null }; // fMax null = auto (Nyquist)
+let fftDrag = null;
+let dragState = null;
+
+// ---------- DOM ----------
+const $ = (id)=>document.getElementById(id);
+const fileInput = $('fileInput');
+const dsoCanvas = $('dsoCanvas'), dsoCtx = dsoCanvas.getContext('2d');
+const fftCanvas = $('fftCanvas'), fftCtx = fftCanvas.getContext('2d');
+
+// ---------- CSV parsing ----------
+function detectDelim(line){
+  const cands = [',',';','\t'];
+  let best=',', bestCount=-1;
+  for(const c of cands){
+    const n = line.split(c).length;
+    if(n>bestCount){bestCount=n; best=c;}
+  }
+  return best;
+}
+
+function parseCSV(text){
+  const rawLines = text.split(/\r\n|\n|\r/).filter(l=>l.trim().length>0);
+  if(rawLines.length===0) throw new Error('Empty file');
+  const delim = detectDelim(rawLines[0]);
+  const rows = rawLines.map(l=>l.split(delim).map(s=>s.trim()));
+
+  let dataStart = -1;
+  for(let i=0;i<rows.length;i++){
+    const vals = rows[i].map(s=>parseFloat(s.replace(/,/g,'')));
+    if(vals.length>=1 && vals.every(v=>Number.isFinite(v))){ dataStart = i; break; }
+  }
+  if(dataStart===-1) throw new Error('No numeric data rows found in file');
+
+  const headerRows = rows.slice(0, dataStart);
+  const nameRow = headerRows[headerRows.length-2] || null;
+  const unitRow = headerRows[headerRows.length-1] || null;
+
+  const numCols = rows[dataStart].length;
+  const dataRows = rows.slice(dataStart).filter(r=>r.length===numCols);
+  const parsed = dataRows.map(r=>r.map(s=>parseFloat(s.replace(/,/g,''))));
+
+  let t, chanCols, chanNames, chanUnits;
+  if(numCols===1){
+    // amplitude only, no time column
+    const n = parsed.length;
+    t = new Float64Array(n);
+    const dt = 1; // placeholder, user can rescale via sample-rate later if needed
+    for(let i=0;i<n;i++) t[i]=i*dt;
+    chanCols = [0];
+    chanNames = [nameRow ? nameRow[0] : 'CH1'];
+    chanUnits = [unitRow ? unitRow[0] : ''];
+  } else {
+    const n = parsed.length;
+    t = new Float64Array(n);
+    for(let i=0;i<n;i++) t[i]=parsed[i][0];
+    chanCols = [];
+    for(let c=1;c<numCols;c++) chanCols.push(c);
+    chanNames = chanCols.map((c,i)=> (nameRow && nameRow[c]!==undefined) ? nameRow[c] : ('CH'+(i+1)));
+    chanUnits = chanCols.map((c,i)=> (unitRow && unitRow[c]!==undefined) ? unitRow[c] : '');
+  }
+
+  const n = parsed.length;
+  const channels = chanCols.map((c,idx)=>{
+    const arr = new Float64Array(n);
+    for(let i=0;i<n;i++) arr[i] = parsed[i][c];
+    return { name: chanNames[idx] || ('CH'+(idx+1)), unit: chanUnits[idx] || '', values: arr };
+  });
+
+  return { t, channels };
+}
+
+function loadData(parsedData){
+  data = parsedData;
+  chState = data.channels.map((c,i)=>({
+    enabled: i<4,
+    voltsPerDiv: 1,
+    offsetDiv: 0,
+    invert:false,
+    shiftSec: 0,
+    refFreqHz: null,
+    color: CH_COLORS[i % CH_COLORS.length]
+  }));
+  activeVertCh = 0;
+  trig.chan = 0;
+  fftCfg.chan = 0;
+  fftView = { fMin:0, fMax:null };
+  fftCache = null;
+  buildChannelUI();
+  $('fftFMin').value = 0;
+  $('fftFMax').value = '';
+  autoscale();
+  $('dropzone').style.display='none';
+  updateStatus();
+  render();
+}
+
+function updateStatus(){
+  if(!data){ $('statusBar').innerHTML='<span>No data loaded</span>'; return; }
+  const n = data.t.length;
+  const dur = data.t[n-1]-data.t[0];
+  $('statusBar').innerHTML =
+    `<span>Samples: <b>${n.toLocaleString()}</b></span>`+
+    `<span>Channels: <b>${data.channels.length}</b></span>`+
+    `<span>Span: <b>${fmtTime(dur)}</b></span>`+
+    `<span>Sample rate: <b>${fmtHz(1/estDt())}</b></span>`;
+}
+
+function estDt(){
+  const n = data.t.length;
+  if(n<2) return 1;
+  return (data.t[n-1]-data.t[0])/(n-1);
+}
+
+// ---------- UI: channel list ----------
+function buildChannelUI(){
+  const list = $('chanList');
+  list.innerHTML='';
+  data.channels.forEach((c,i)=>{
+    const row = document.createElement('div');
+    row.className='chrow'+(i===activeVertCh?' selected':'');
+    row.innerHTML = `
+      <div class="chdot" style="background:${chState[i].color}"></div>
+      <div class="chname" title="${c.name} (${c.unit})">${c.name}</div>
+      <div class="invbtn ${chState[i].invert?'on':''}" data-i="${i}" title="Invert this channel (mirror about 0)">INV</div>
+      <div class="ch-toggle ${chState[i].enabled?'on':''}" data-i="${i}"></div>
+    `;
+    row.addEventListener('click', (e)=>{
+      if(e.target.classList.contains('ch-toggle') || e.target.classList.contains('invbtn')) return;
+      selectVertChannel(i);
+    });
+    row.querySelector('.ch-toggle').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      chState[i].enabled = !chState[i].enabled;
+      e.currentTarget.classList.toggle('on', chState[i].enabled);
+      render();
+    });
+    row.querySelector('.invbtn').addEventListener('click', (e)=>{
+      e.stopPropagation();
+      chState[i].invert = !chState[i].invert;
+      e.currentTarget.classList.toggle('on', chState[i].invert);
+      if(i===activeVertCh) $('invertChk').checked = chState[i].invert;
+      render();
+    });
+    list.appendChild(row);
+  });
+  // trigger / fft channel selects
+  [ $('trigChan'), $('fftChan') ].forEach(sel=>{
+    sel.innerHTML = data.channels.map((c,i)=>`<option value="${i}">${c.name}</option>`).join('');
+  });
+  $('trigChan').value = trig.chan;
+  $('fftChan').value = fftCfg.chan;
+  selectVertChannel(0);
+}
+
+function selectVertChannel(i){
+  activeVertCh = i;
+  $('vertChLabel').textContent = data.channels[i].name;
+  $('phaseChLabel').textContent = data.channels[i].name;
+  $('voltsVal').textContent = fmtVoltsDiv(chState[i].voltsPerDiv, data.channels[i].unit);
+  $('voltsUncal').style.display = fineMode ? 'inline' : 'none';
+  $('offsetVal').textContent = chState[i].offsetDiv.toFixed(3)+' div';
+  $('invertChk').checked = chState[i].invert;
+  updateKnobAngle('voltsKnob', VOLT_STEPS.indexOf(nearestStep(chState[i].voltsPerDiv,VOLT_STEPS)), VOLT_STEPS.length);
+  document.querySelectorAll('#chanList .chrow').forEach((row,idx)=>{
+    row.classList.toggle('selected', idx===i);
+  });
+  refreshShiftFields();
+}
+
+function getRefFreq(i){
+  if(chState[i].refFreqHz) return chState[i].refFreqHz;
+  const m = computeMeasurements(i);
+  return (m && Number.isFinite(m.freq) && m.freq>0) ? m.freq : 1000;
+}
+
+function refreshShiftFields(){
+  const i = activeVertCh;
+  if(!data || !chState[i]) return;
+  const freq = getRefFreq(i);
+  $('shiftVal').textContent = fmtTime(chState[i].shiftSec);
+  const deg = chState[i].shiftSec*freq*360;
+  $('shiftDegInfo').textContent = `≈ ${deg.toFixed(1)}° @ ${fmtHz(freq)}`;
+}
+
+// ---------- knobs ----------
+function nearestStep(v, steps){
+  let best=steps[0], bd=Infinity;
+  for(const s of steps){ const d=Math.abs(Math.log(s)-Math.log(v)); if(d<bd){bd=d;best=s;} }
+  return best;
+}
+function stepIndex(v, steps){ return steps.indexOf(nearestStep(v,steps)); }
+function updateKnobAngle(id, idx, total){
+  const ang = -135 + (idx/(total-1))*270;
+  $(id).style.setProperty('--ang', ang+'deg');
+}
+
+function setupKnob(knobEl, steps, getVal, setVal, onChange){
+  let startY=0, startIdx=0;
+  knobEl.addEventListener('pointerdown', (e)=>{
+    startY = e.clientY;
+    startIdx = stepIndex(getVal(), steps);
+    knobEl.setPointerCapture(e.pointerId);
+    dragState = 'knob';
+  });
+  knobEl.addEventListener('pointermove', (e)=>{
+    if(!knobEl.hasPointerCapture(e.pointerId)) return;
+    const dy = startY - e.clientY;
+    const steps_moved = Math.round(dy/12);
+    let idx = Math.min(steps.length-1, Math.max(0, startIdx+steps_moved));
+    setVal(steps[idx]);
+    updateKnobAngle(knobEl.id, idx, steps.length);
+    onChange();
+  });
+  knobEl.addEventListener('pointerup', (e)=>{ dragState=null; try{knobEl.releasePointerCapture(e.pointerId);}catch(_){} });
+  knobEl.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    let idx = stepIndex(getVal(), steps);
+    idx = Math.min(steps.length-1, Math.max(0, idx + (e.deltaY<0?1:-1)));
+    setVal(steps[idx]);
+    updateKnobAngle(knobEl.id, idx, steps.length);
+    onChange();
+  }, {passive:false});
+}
+
+// Volts/Div knob: coarse mode steps through the calibrated 1-2-5 sequence (like a
+// real scope's detented gain switch). Fine mode (shares the same fineMode toggle as
+// Position/Time-Shift) instead gives smooth, uncalibrated gain - a small percentage
+// change per pixel/tick - for dialing in an exact fit. Automatic measurements always
+// read from the raw samples, so they stay numerically exact in either mode.
+function setupVoltsKnob(knobEl){
+  let startY=0, startVal=1, startIdx=0;
+  function apply(v){
+    v = Math.max(1e-6, Math.min(1000, v));
+    chState[activeVertCh].voltsPerDiv = v;
+    $('voltsVal').textContent = fmtVoltsDiv(v, data ? data.channels[activeVertCh].unit : '');
+    $('voltsUncal').style.display = fineMode ? 'inline' : 'none';
+    render();
+  }
+  knobEl.addEventListener('pointerdown', (e)=>{
+    startY = e.clientY;
+    startVal = chState[activeVertCh].voltsPerDiv;
+    startIdx = stepIndex(startVal, VOLT_STEPS);
+    knobEl.setPointerCapture(e.pointerId);
+  });
+  knobEl.addEventListener('pointermove', (e)=>{
+    if(!knobEl.hasPointerCapture(e.pointerId)) return;
+    const dy = startY-e.clientY;
+    if(fineMode){
+      apply(startVal*Math.pow(1.01, dy));
+      updateKnobAngle('voltsKnob', stepIndex(chState[activeVertCh].voltsPerDiv, VOLT_STEPS), VOLT_STEPS.length);
+    } else {
+      const idx = Math.min(VOLT_STEPS.length-1, Math.max(0, startIdx+Math.round(dy/12)));
+      apply(VOLT_STEPS[idx]);
+      updateKnobAngle('voltsKnob', idx, VOLT_STEPS.length);
+    }
+  });
+  knobEl.addEventListener('pointerup', (e)=>{ try{knobEl.releasePointerCapture(e.pointerId);}catch(_){} });
+  knobEl.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    if(fineMode){
+      apply(chState[activeVertCh].voltsPerDiv * (e.deltaY<0 ? 1.02 : 1/1.02));
+      updateKnobAngle('voltsKnob', stepIndex(chState[activeVertCh].voltsPerDiv, VOLT_STEPS), VOLT_STEPS.length);
+    } else {
+      let idx = stepIndex(chState[activeVertCh].voltsPerDiv, VOLT_STEPS);
+      idx = Math.min(VOLT_STEPS.length-1, Math.max(0, idx+(e.deltaY<0?1:-1)));
+      apply(VOLT_STEPS[idx]);
+      updateKnobAngle('voltsKnob', idx, VOLT_STEPS.length);
+    }
+  }, {passive:false});
+}
+setupVoltsKnob($('voltsKnob'));
+
+setupKnob($('timeKnob'), TIME_STEPS,
+  ()=>timePerDiv,
+  (v)=>{ timePerDiv=v; $('timeVal').textContent=fmtTimeDiv(v); },
+  render);
+
+// continuous (unstepped) knob: value changes smoothly with drag distance / wheel ticks,
+// at a rate that depends on fineMode. The knob spins freely (cosmetic) rather than
+// pointing at a fixed position, like a real endless rotary encoder.
+let fineMode = false;
+function setupContinuousKnob(knobEl, getStep, getVal, setVal, onChange){
+  let startY=0, startVal=0, rotation=0;
+  function applyRotation(){ knobEl.style.setProperty('--ang', (rotation%360)+'deg'); }
+  knobEl.addEventListener('pointerdown', (e)=>{
+    startY = e.clientY;
+    startVal = getVal();
+    knobEl.setPointerCapture(e.pointerId);
+  });
+  knobEl.addEventListener('pointermove', (e)=>{
+    if(!knobEl.hasPointerCapture(e.pointerId)) return;
+    const dy = startY - e.clientY;
+    setVal(startVal + dy*getStep());
+    rotation = dy*3;
+    applyRotation();
+    onChange();
+  });
+  knobEl.addEventListener('pointerup', (e)=>{ try{knobEl.releasePointerCapture(e.pointerId);}catch(_){} });
+  knobEl.addEventListener('wheel', (e)=>{
+    e.preventDefault();
+    const dir = e.deltaY<0 ? 1 : -1;
+    setVal(getVal() + dir*getStep());
+    rotation += dir*12;
+    applyRotation();
+    onChange();
+  }, {passive:false});
+}
+
+setupContinuousKnob($('offsetKnob'),
+  ()=> fineMode ? 0.002 : 0.02,
+  ()=> chState[activeVertCh].offsetDiv,
+  (v)=>{ chState[activeVertCh].offsetDiv = Math.max(-10, Math.min(10, v)); $('offsetVal').textContent=chState[activeVertCh].offsetDiv.toFixed(3)+' div'; },
+  render);
+
+setupContinuousKnob($('shiftKnob'),
+  ()=> (fineMode ? timePerDiv/500 : timePerDiv/50),
+  ()=> chState[activeVertCh].shiftSec,
+  (v)=>{ chState[activeVertCh].shiftSec = v; refreshShiftFields(); },
+  render);
+
+$('fineModeBtn').addEventListener('click', ()=>{
+  fineMode = !fineMode;
+  $('fineModeBtn').classList.toggle('active', fineMode);
+  $('voltsUncal').style.display = fineMode ? 'inline' : 'none';
+});
+
+// ---------- control bindings ----------
+$('invertChk').addEventListener('change', (e)=>{
+  chState[activeVertCh].invert = e.target.checked;
+  const rows = document.querySelectorAll('#chanList .chrow .invbtn');
+  if(rows[activeVertCh]) rows[activeVertCh].classList.toggle('on', e.target.checked);
+  render();
+});
+
+$('shiftResetBtn').addEventListener('click', ()=>{
+  chState[activeVertCh].shiftSec = 0;
+  refreshShiftFields();
+  render();
+});
+$('hposSlider').addEventListener('input', (e)=>{
+  if(!data) return;
+  const n=data.t.length;
+  const dur = data.t[n-1]-data.t[0];
+  hPositionSec = data.t[0] + parseFloat(e.target.value)*dur;
+  render();
+});
+$('autoscaleBtn').addEventListener('click', autoscale);
+$('resetBtn').addEventListener('click', ()=>{ if(data) autoscale(); });
+
+$('trigChan').addEventListener('change', (e)=>{ trig.chan=parseInt(e.target.value); });
+$('trigRise').addEventListener('click', ()=>{ trig.edge='rise'; $('trigRise').classList.add('active'); $('trigFall').classList.remove('active'); });
+$('trigFall').addEventListener('click', ()=>{ trig.edge='fall'; $('trigFall').classList.add('active'); $('trigRise').classList.remove('active'); });
+$('trigLevelSlider').addEventListener('input', (e)=>{ trig.level=parseFloat(e.target.value); render(); });
+$('trigFindBtn').addEventListener('click', findEdgeAndCenter);
+
+$('timeCursorChk').addEventListener('change', (e)=>{ cursors.time.enabled=e.target.checked; render(); });
+$('voltCursorChk').addEventListener('change', (e)=>{ cursors.volt.enabled=e.target.checked; render(); });
+
+$('fftChan').addEventListener('change', (e)=>{ fftCfg.chan=parseInt(e.target.value); fftView={fMin:0,fMax:null}; $('fftFMin').value=0; $('fftFMax').value=''; render(); });
+$('fftWindow').addEventListener('change', (e)=>{ fftCfg.window=e.target.value; render(); });
+$('fftDbBtn').addEventListener('click', ()=>{ fftCfg.scale='db'; $('fftDbBtn').classList.add('active'); $('fftLinBtn').classList.remove('active'); render(); });
+$('fftLinBtn').addEventListener('click', ()=>{ fftCfg.scale='lin'; $('fftLinBtn').classList.add('active'); $('fftDbBtn').classList.remove('active'); render(); });
+$('fftPeakCount').addEventListener('change', (e)=>{
+  let v = parseInt(e.target.value);
+  if(!Number.isFinite(v)) v=0;
+  v = Math.min(15, Math.max(0, v));
+  fftCfg.peakCount = v; e.target.value = v; render();
+});
+$('fftFMin').addEventListener('change', (e)=>{
+  let v = parseFloat(e.target.value);
+  fftView.fMin = Number.isFinite(v) ? Math.max(0,v) : 0;
+  e.target.value = fftView.fMin;
+  render();
+});
+$('fftFMax').addEventListener('change', (e)=>{
+  const v = parseFloat(e.target.value);
+  fftView.fMax = (Number.isFinite(v) && v>fftView.fMin) ? v : null;
+  render();
+});
+$('fftFullRangeBtn').addEventListener('click', ()=>{
+  fftView = { fMin:0, fMax:null };
+  $('fftFMin').value = 0; $('fftFMax').value='';
+  render();
+});
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    view = tab.dataset.view;
+    $('dsoBox').style.display = (view==='dso'||view==='both') ? 'block':'none';
+    $('fftBox').style.display = (view==='fft'||view==='both') ? 'block':'none';
+    $('peaksGroup').style.display = (view==='fft'||view==='both') ? 'block':'none';
+    resizeCanvases(); render();
+  });
+});
+
+// ---------- file loading ----------
+fileInput.addEventListener('change', (e)=>{
+  const f = e.target.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{ loadData(parseCSV(reader.result)); }
+    catch(err){ alert('Could not parse CSV: '+err.message); }
+  };
+  reader.readAsText(f);
+});
+['dragover','drop'].forEach(evt=>{
+  window.addEventListener(evt, (e)=>{ e.preventDefault(); });
+});
+window.addEventListener('drop', (e)=>{
+  const f = e.dataTransfer.files[0]; if(!f) return;
+  const reader = new FileReader();
+  reader.onload = ()=>{
+    try{ loadData(parseCSV(reader.result)); }
+    catch(err){ alert('Could not parse CSV: '+err.message); }
+  };
+  reader.readAsText(f);
+});
+
+$('demoBtn').addEventListener('click', ()=>{
+  const n = 4000, fs=200000;
+  const t = new Float64Array(n);
+  const ch1 = new Float64Array(n);
+  const ch2 = new Float64Array(n);
+  for(let i=0;i<n;i++){
+    const time = i/fs;
+    t[i]=time;
+    ch1[i] = 2.0*Math.sin(2*Math.PI*1000*time) + 0.4*Math.sin(2*Math.PI*3000*time) + (Math.random()-0.5)*0.05;
+    ch2[i] = 1.2*Math.sign(Math.sin(2*Math.PI*500*time)) + (Math.random()-0.5)*0.03;
+  }
+  loadData({ t, channels:[
+    {name:'CH1', unit:'Volt', values:ch1},
+    {name:'CH2', unit:'Volt', values:ch2}
+  ]});
+});
+
+// ---------- formatting ----------
+function fmtTime(s){
+  const a=Math.abs(s);
+  if(a>=1) return s.toFixed(3)+' s';
+  if(a>=1e-3) return (s*1e3).toFixed(3)+' ms';
+  if(a>=1e-6) return (s*1e6).toFixed(3)+' µs';
+  return (s*1e9).toFixed(1)+' ns';
+}
+function fmtTimeDiv(s){
+  const a=Math.abs(s);
+  if(a>=1) return s+' s/div';
+  if(a>=1e-3) return (s*1e3).toFixed(0)+' ms/div';
+  if(a>=1e-6) return (s*1e6).toFixed(0)+' µs/div';
+  return (s*1e9).toFixed(0)+' ns/div';
+}
+function fmtVoltsDiv(v, unit){
+  unit = unit||'V';
+  if(v>=1) return v+' '+unit+'/div';
+  if(v>=1e-3) return (v*1e3).toFixed(0)+' m'+unit+'/div';
+  return (v*1e6).toFixed(0)+' µ'+unit+'/div';
+}
+function fmtVal(v, unit){
+  unit = unit||'V';
+  const a=Math.abs(v);
+  if(a>=1||v===0) return v.toFixed(3)+' '+unit;
+  if(a>=1e-3) return (v*1e3).toFixed(2)+' m'+unit;
+  return (v*1e6).toFixed(2)+' µ'+unit;
+}
+function fmtHz(f){
+  if(!Number.isFinite(f)) return '—';
+  const a=Math.abs(f);
+  if(a>=1e6) return (f/1e6).toFixed(3)+' MHz';
+  if(a>=1e3) return (f/1e3).toFixed(3)+' kHz';
+  return f.toFixed(3)+' Hz';
+}
+
+// ---------- autoscale ----------
+function autoscale(){
+  if(!data) return;
+  const n=data.t.length;
+  timePerDiv = nearestStep((data.t[n-1]-data.t[0])/10, TIME_STEPS);
+  hPositionSec = (data.t[0]+data.t[n-1])/2;
+  data.channels.forEach((c,i)=>{
+    if(!chState[i].enabled) return;
+    let mn=Infinity, mx=-Infinity;
+    for(let k=0;k<c.values.length;k++){ const v=c.values[k]; if(v<mn)mn=v; if(v>mx)mx=v; }
+    const span = Math.max(mx-mn, 1e-9);
+    chState[i].voltsPerDiv = nearestStep(span/6, VOLT_STEPS);
+    chState[i].offsetDiv = -((mn+mx)/2)/chState[i].voltsPerDiv;
+  });
+  selectVertChannel(activeVertCh);
+  $('timeVal').textContent = fmtTimeDiv(timePerDiv);
+  $('hposSlider').value = 0.5;
+  render();
+}
+
+// ---------- trigger ----------
+function findEdgeAndCenter(){
+  if(!data) return;
+  const c = data.channels[trig.chan];
+  const lvl = trig.level;
+  const rise = trig.edge==='rise';
+  for(let i=1;i<c.values.length;i++){
+    const a=c.values[i-1], b=c.values[i];
+    const crossed = rise ? (a<lvl && b>=lvl) : (a>lvl && b<=lvl);
+    if(crossed){ hPositionSec = data.t[i]; $('hposSlider').value = (hPositionSec-data.t[0])/(data.t[data.t.length-1]-data.t[0]); render(); return; }
+  }
+  alert('No trigger edge found at this level.');
+}
+
+// ---------- canvas sizing ----------
+function resizeCanvases(){
+  [dsoCanvas, fftCanvas].forEach(cv=>{
+    if(cv.style.display==='none') return;
+    const rect = cv.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio||1;
+    const cssH = cv===dsoCanvas ? 500 : 340;
+    cv.style.height = cssH+'px';
+    cv.width = Math.round((rect.width-12)*dpr);
+    cv.height = Math.round(cssH*dpr);
+  });
+}
+window.addEventListener('resize', ()=>{ resizeCanvases(); render(); });
+
+// ---------- grid drawing ----------
+function drawGrid(ctx, W, H, divsX, divsY){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle = '#050a08';
+  ctx.fillRect(0,0,W,H);
+  const dx = W/divsX, dy = H/divsY;
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid');
+  ctx.lineWidth=1;
+  for(let i=0;i<=divsX;i++){
+    ctx.beginPath(); ctx.moveTo(i*dx+0.5,0); ctx.lineTo(i*dx+0.5,H); ctx.stroke();
+  }
+  for(let j=0;j<=divsY;j++){
+    ctx.beginPath(); ctx.moveTo(0,j*dy+0.5); ctx.lineTo(W,j*dy+0.5); ctx.stroke();
+  }
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid-axis');
+  ctx.lineWidth=1.2;
+  ctx.beginPath(); ctx.moveTo(0,H/2+0.5); ctx.lineTo(W,H/2+0.5); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W/2+0.5,0); ctx.lineTo(W/2+0.5,H); ctx.stroke();
+  // tick marks
+  ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--grid-major');
+  for(let i=0;i<=divsX;i++){
+    for(let s=1;s<5;s++){
+      const x=i*dx - dx + s*dx/5;
+      if(x<0||x>W) continue;
+      ctx.beginPath(); ctx.moveTo(x,H/2-4); ctx.lineTo(x,H/2+4); ctx.stroke();
+    }
+  }
+}
+
+// ---------- main waveform render ----------
+function render(){
+  if(!data){ resizeCanvases(); return; }
+  resizeCanvases();
+  const dpr = window.devicePixelRatio||1;
+  if(view==='dso'||view==='both') renderDSO(dpr);
+  if(view==='fft'||view==='both') renderFFT(dpr);
+  renderMeasurements();
+  renderCursorReadout();
+}
+
+function visibleRange(){
+  const halfSpan = timePerDiv*5;
+  return [hPositionSec-halfSpan, hPositionSec+halfSpan];
+}
+
+function findIdx(tArr, val){
+  // binary search
+  let lo=0, hi=tArr.length-1;
+  while(lo<hi){ const mid=(lo+hi)>>1; if(tArr[mid]<val) lo=mid+1; else hi=mid; }
+  return lo;
+}
+
+function renderDSO(dpr){
+  const W = dsoCanvas.width, H = dsoCanvas.height;
+  const divsX=10, divsY=8;
+  drawGrid(dsoCtx, W, H, divsX, divsY);
+  const [tStart,tEnd] = visibleRange();
+  const pxPerSec = W/(tEnd-tStart);
+
+  data.channels.forEach((c,ci)=>{
+    if(!chState[ci].enabled) return;
+    const cs = chState[ci];
+    const shift = cs.shiftSec||0;
+    // this channel's own displayed trace is data.t[k]+shift, so we need samples
+    // whose *shifted* time falls in [tStart,tEnd] -> original t in [tStart-shift, tEnd-shift]
+    const i0 = Math.max(0, findIdx(data.t, tStart-shift)-1);
+    const i1 = Math.min(data.t.length-1, findIdx(data.t, tEnd-shift)+1);
+    dsoCtx.strokeStyle = cs.color;
+    dsoCtx.lineWidth = 1.6*dpr;
+    dsoCtx.beginPath();
+    const pxPerDiv = H/divsY;
+    const voltToY = (v)=>{
+      const vv = cs.invert ? -v : v;
+      return H/2 - ((vv/cs.voltsPerDiv)+cs.offsetDiv)*pxPerDiv;
+    };
+    const nVis = i1-i0;
+    if(nVis > W*2){
+      // decimate: min/max per pixel column
+      const bucket = nVis/W;
+      for(let px=0; px<W; px++){
+        const startI = i0 + Math.floor(px*bucket);
+        const endI = Math.min(i1, i0+Math.floor((px+1)*bucket));
+        let mn=Infinity, mx=-Infinity;
+        for(let k=startI;k<=endI;k++){ const v=c.values[k]; if(v<mn)mn=v; if(v>mx)mx=v; }
+        if(mn===Infinity) continue;
+        const yMn = voltToY(mn), yMx = voltToY(mx);
+        dsoCtx.moveTo(px, yMn); dsoCtx.lineTo(px, yMx);
+      }
+      dsoCtx.stroke();
+    } else {
+      let started=false;
+      for(let k=i0;k<=i1;k++){
+        const x = (data.t[k]+shift-tStart)*pxPerSec;
+        const y = voltToY(c.values[k]);
+        if(!started){ dsoCtx.moveTo(x,y); started=true; } else dsoCtx.lineTo(x,y);
+      }
+      dsoCtx.stroke();
+    }
+    // channel ground marker (left edge arrow)
+    const gy = voltToY(0);
+    dsoCtx.fillStyle = cs.color;
+    dsoCtx.beginPath();
+    dsoCtx.moveTo(2,gy); dsoCtx.lineTo(12,gy-6); dsoCtx.lineTo(12,gy+6); dsoCtx.closePath(); dsoCtx.fill();
+    if(shift!==0){
+      dsoCtx.font=(9*dpr)+'px ui-monospace, monospace';
+      dsoCtx.fillText((shift>0?'+':'')+fmtTime(shift), 14*dpr, gy+3*dpr);
+    }
+  });
+
+  // trigger level line
+  if(data.channels[trig.chan] && chState[trig.chan] && chState[trig.chan].enabled){
+    const cs = chState[trig.chan];
+    const pxPerDiv = H/divsY;
+    const y = H/2 - ((trig.level/cs.voltsPerDiv)+cs.offsetDiv)*pxPerDiv;
+    dsoCtx.strokeStyle = cs.color; dsoCtx.setLineDash([6,4]); dsoCtx.lineWidth=1*dpr;
+    dsoCtx.beginPath(); dsoCtx.moveTo(0,y); dsoCtx.lineTo(W,y); dsoCtx.stroke();
+    dsoCtx.setLineDash([]);
+    dsoCtx.fillStyle=cs.color;
+    dsoCtx.beginPath(); dsoCtx.moveTo(W-14,y-6); dsoCtx.lineTo(W-14,y+6); dsoCtx.lineTo(W,y); dsoCtx.closePath(); dsoCtx.fill();
+  }
+
+  drawCursorsOnDSO(W,H,tStart,tEnd,pxPerSec,divsY);
+  drawScreenLabels(dsoCtx, W, H, tStart, tEnd);
+}
+
+function drawScreenLabels(ctx,W,H,tStart,tEnd){
+  ctx.font = (11*(window.devicePixelRatio||1))+'px ui-monospace, monospace';
+  ctx.fillStyle='rgba(231,236,239,0.55)';
+  ctx.textBaseline='top';
+  ctx.fillText(fmtTimeDiv(timePerDiv), 8, 6);
+  ctx.textAlign='right';
+  ctx.fillText(fmtTime(tEnd-tStart)+' window', W-8, 6);
+  ctx.textAlign='left';
+}
+
+function drawCursorsOnDSO(W,H,tStart,tEnd,pxPerSec,divsY){
+  if(cursors.time.enabled){
+    ['t1','t2'].forEach((key,idx)=>{
+      const tVal = tStart + cursors.time[key]*(tEnd-tStart);
+      const x = (tVal-tStart)*pxPerSec;
+      dsoCtx.strokeStyle = idx===0?'#ffffff':'#ffb84d';
+      dsoCtx.lineWidth=1;
+      dsoCtx.beginPath(); dsoCtx.moveTo(x,0); dsoCtx.lineTo(x,H); dsoCtx.stroke();
+      dsoCtx.fillStyle = dsoCtx.strokeStyle;
+      dsoCtx.font='10px ui-monospace, monospace';
+      dsoCtx.fillText(idx===0?'T1':'T2', x+3, H-14);
+    });
+  }
+  if(cursors.volt.enabled && data.channels[activeVertCh]){
+    const cs = chState[activeVertCh];
+    const pxPerDiv = H/divsY;
+    ['v1','v2'].forEach((key,idx)=>{
+      const vVal = cursors.volt[key];
+      const y = H/2 - ((vVal/cs.voltsPerDiv)+cs.offsetDiv)*pxPerDiv;
+      dsoCtx.strokeStyle = idx===0?'#ffffff':'#ffb84d';
+      dsoCtx.lineWidth=1;
+      dsoCtx.beginPath(); dsoCtx.moveTo(0,y); dsoCtx.lineTo(W,y); dsoCtx.stroke();
+      dsoCtx.fillStyle = dsoCtx.strokeStyle;
+      dsoCtx.font='10px ui-monospace, monospace';
+      dsoCtx.fillText(idx===0?'V1':'V2', 4, y-12);
+    });
+  }
+}
+
+// cursor dragging
+let hoverCursor = null;
+dsoCanvas.addEventListener('pointerdown', (e)=>{
+  if(!data) return;
+  const rect = dsoCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio||1;
+  const x = (e.clientX-rect.left)*dpr, y=(e.clientY-rect.top)*dpr;
+  const W=dsoCanvas.width, H=dsoCanvas.height;
+  const [tStart,tEnd]=visibleRange();
+  const pxPerSec = W/(tEnd-tStart);
+  if(cursors.time.enabled){
+    for(const key of ['t1','t2']){
+      const tVal = tStart+cursors.time[key]*(tEnd-tStart);
+      const cx = (tVal-tStart)*pxPerSec;
+      if(Math.abs(cx-x)<8*dpr){ dragState={type:'time',key}; dsoCanvas.setPointerCapture(e.pointerId); return; }
+    }
+  }
+  if(cursors.volt.enabled){
+    const cs = chState[activeVertCh]; const pxPerDiv=H/8;
+    for(const key of ['v1','v2']){
+      const vy = H/2 - ((cursors.volt[key]/cs.voltsPerDiv)+cs.offsetDiv)*pxPerDiv;
+      if(Math.abs(vy-y)<8*dpr){ dragState={type:'volt',key}; dsoCanvas.setPointerCapture(e.pointerId); return; }
+    }
+  }
+  dragState = {type:'pan', startX:x, startPos:hPositionSec};
+  dsoCanvas.setPointerCapture(e.pointerId);
+});
+dsoCanvas.addEventListener('pointermove', (e)=>{
+  if(!dragState || !data) return;
+  const rect = dsoCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio||1;
+  const x=(e.clientX-rect.left)*dpr, y=(e.clientY-rect.top)*dpr;
+  const W=dsoCanvas.width, H=dsoCanvas.height;
+  const [tStart,tEnd]=visibleRange();
+  if(dragState.type==='time'){
+    const frac = Math.min(1,Math.max(0, x/W));
+    cursors.time[dragState.key]=frac; render();
+  } else if(dragState.type==='volt'){
+    const cs=chState[activeVertCh]; const pxPerDiv=H/8;
+    const val = -((y-H/2)/pxPerDiv - cs.offsetDiv)*cs.voltsPerDiv;
+    cursors.volt[dragState.key]=val; render();
+  } else if(dragState.type==='pan'){
+    const dxPx = x-dragState.startX;
+    const dSec = -dxPx/(W/(tEnd-tStart));
+    hPositionSec = dragState.startPos+dSec;
+    render();
+  }
+});
+['pointerup','pointercancel'].forEach(evt=>dsoCanvas.addEventListener(evt, ()=>{ dragState=null; }));
+dsoCanvas.addEventListener('wheel', (e)=>{
+  if(!data) return;
+  e.preventDefault();
+  const idx = stepIndex(timePerDiv, TIME_STEPS);
+  const newIdx = Math.min(TIME_STEPS.length-1, Math.max(0, idx + (e.deltaY<0?-1:1)));
+  timePerDiv = TIME_STEPS[newIdx];
+  $('timeVal').textContent = fmtTimeDiv(timePerDiv);
+  updateKnobAngle('timeKnob', newIdx, TIME_STEPS.length);
+  render();
+}, {passive:false});
+
+// ---------- measurements ----------
+function computeMeasurements(ci){
+  const [tStart,tEnd] = visibleRange();
+  const shift = (chState[ci] && chState[ci].shiftSec) || 0;
+  const i0 = Math.max(0, findIdx(data.t, tStart-shift));
+  const i1 = Math.min(data.t.length-1, findIdx(data.t, tEnd-shift));
+  const vals = data.channels[ci].values;
+  let mn=Infinity, mx=-Infinity, sum=0, sumsq=0, n=0;
+  for(let k=i0;k<=i1;k++){ const v=vals[k]; if(v<mn)mn=v; if(v>mx)mx=v; sum+=v; sumsq+=v*v; n++; }
+  if(n===0) return null;
+  const mean = sum/n, rms = Math.sqrt(sumsq/n);
+  // frequency via rising zero (mean) crossings
+  const lvl = mean;
+  const crossI = [];
+  for(let k=i0+1;k<=i1;k++){
+    if(vals[k-1]<lvl && vals[k]>=lvl) crossI.push(data.t[k]);
+  }
+  let freq=NaN, period=NaN;
+  if(crossI.length>=2){
+    const diffs=[]; for(let i=1;i<crossI.length;i++) diffs.push(crossI[i]-crossI[i-1]);
+    diffs.sort((a,b)=>a-b);
+    period = diffs[Math.floor(diffs.length/2)];
+    freq = 1/period;
+  }
+  return { min:mn, max:mx, pp:mx-mn, mean, rms, freq, period };
+}
+
+function renderMeasurements(){
+  const body = $('measBody');
+  if(!data){ body.innerHTML=''; return; }
+  let rows='';
+  data.channels.forEach((c,ci)=>{
+    if(!chState[ci].enabled) return;
+    const m = computeMeasurements(ci);
+    if(!m){ return; }
+    rows += `<tr>
+      <td><span class="swatch" style="background:${chState[ci].color}"></span>${c.name}</td>
+      <td>${fmtVal(m.min,c.unit)}</td>
+      <td>${fmtVal(m.max,c.unit)}</td>
+      <td>${fmtVal(m.pp,c.unit)}</td>
+      <td>${fmtVal(m.mean,c.unit)}</td>
+      <td>${fmtVal(m.rms,c.unit)}</td>
+      <td>${fmtHz(m.freq)}</td>
+      <td>${Number.isFinite(m.period)?fmtTime(m.period):'—'}</td>
+    </tr>`;
+  });
+  body.innerHTML = rows || '<tr><td colspan="8" style="color:var(--text-dim)">No channels enabled</td></tr>';
+}
+
+function renderCursorReadout(){
+  const box = $('cursorReadout');
+  if(!data || (!cursors.time.enabled && !cursors.volt.enabled)){ box.style.display='none'; return; }
+  box.style.display='flex';
+  let html='';
+  if(cursors.time.enabled){
+    const [tStart,tEnd]=visibleRange();
+    const t1 = tStart+cursors.time.t1*(tEnd-tStart);
+    const t2 = tStart+cursors.time.t2*(tEnd-tStart);
+    const dt = t2-t1;
+    html += `<span class="ro">T1 <b>${fmtTime(t1)}</b></span><span class="ro">T2 <b>${fmtTime(t2)}</b></span>`+
+            `<span class="ro">ΔT <b>${fmtTime(dt)}</b></span><span class="ro">1/ΔT <b>${fmtHz(1/Math.abs(dt))}</b></span>`;
+  }
+  if(cursors.volt.enabled){
+    const unit = data.channels[activeVertCh] ? data.channels[activeVertCh].unit : 'V';
+    const dv = cursors.volt.v2-cursors.volt.v1;
+    html += `<span class="ro">V1 <b>${fmtVal(cursors.volt.v1,unit)}</b></span><span class="ro">V2 <b>${fmtVal(cursors.volt.v2,unit)}</b></span>`+
+            `<span class="ro">ΔV <b>${fmtVal(dv,unit)}</b></span>`;
+  }
+  box.innerHTML = html;
+}
+
+// ---------- FFT ----------
+function windowFn(name, N){
+  // matches numpy convention: np.hanning/np.hamming (symmetric, divide by N-1)
+  const w = new Float64Array(N);
+  for(let i=0;i<N;i++){
+    switch(name){
+      case 'hann': w[i]=0.5-0.5*Math.cos(2*Math.PI*i/(N-1)); break;
+      case 'hamming': w[i]=0.54-0.46*Math.cos(2*Math.PI*i/(N-1)); break;
+      case 'blackman': w[i]=0.42-0.5*Math.cos(2*Math.PI*i/(N-1))+0.08*Math.cos(4*Math.PI*i/(N-1)); break;
+      default: w[i]=1;
+    }
+  }
+  return w;
+}
+
+// iterative radix-2 Cooley-Tukey FFT, in place on re/im arrays (length must be a power of 2)
+function fftRadix2(re, im){
+  const n = re.length;
+  for(let i=1,j=0;i<n;i++){
+    let bit = n>>1;
+    for(; j&bit; bit>>=1) j^=bit;
+    j^=bit;
+    if(i<j){ let tr=re[i];re[i]=re[j];re[j]=tr; let ti=im[i];im[i]=im[j];im[j]=ti; }
+  }
+  for(let len=2; len<=n; len<<=1){
+    const ang = -2*Math.PI/len;
+    const wr = Math.cos(ang), wi = Math.sin(ang);
+    for(let i=0;i<n;i+=len){
+      let curWr=1, curWi=0;
+      for(let k=0;k<len/2;k++){
+        const ur=re[i+k], ui=im[i+k];
+        const vr=re[i+k+len/2]*curWr - im[i+k+len/2]*curWi;
+        const vi=re[i+k+len/2]*curWi + im[i+k+len/2]*curWr;
+        re[i+k]=ur+vr; im[i+k]=ui+vi;
+        re[i+k+len/2]=ur-vr; im[i+k+len/2]=ui-vi;
+        const nwr = curWr*wr - curWi*wi;
+        const nwi = curWr*wi + curWi*wr;
+        curWr=nwr; curWi=nwi;
+      }
+    }
+  }
+}
+
+function nextPow2(n){ let p=1; while(p<n) p*=2; return p; }
+
+// circular convolution of two power-of-2-length complex sequences, via FFT
+function circularConvolve(m, aRe, aIm, bRe, bIm){
+  fftRadix2(aRe, aIm);
+  fftRadix2(bRe, bIm);
+  const rRe = new Float64Array(m), rIm = new Float64Array(m);
+  for(let i=0;i<m;i++){
+    rRe[i] = aRe[i]*bRe[i] - aIm[i]*bIm[i];
+    rIm[i] = aRe[i]*bIm[i] + aIm[i]*bRe[i];
+  }
+  for(let i=0;i<m;i++) rIm[i] = -rIm[i];
+  fftRadix2(rRe, rIm);
+  for(let i=0;i<m;i++){ rRe[i]/=m; rIm[i] = -rIm[i]/m; }
+  return [rRe, rIm];
+}
+
+// Bluestein's chirp-z transform: exact-length DFT for arbitrary N (not just powers of 2).
+// This lets the FFT size match the actual sample count, same as numpy.fft.rfft(x) with no padding.
+function bluesteinFFT(xRe, xIm){
+  const n = xRe.length;
+  let m = 1;
+  while(m < n*2+1) m *= 2;
+  const cosT = new Float64Array(n), sinT = new Float64Array(n);
+  for(let i=0;i<n;i++){
+    const j = (i*i) % (2*n); // reduce mod 2n first for numerical accuracy
+    const ang = Math.PI*j/n;
+    cosT[i] = Math.cos(ang);
+    sinT[i] = Math.sin(ang);
+  }
+  const aRe = new Float64Array(m), aIm = new Float64Array(m);
+  for(let i=0;i<n;i++){
+    aRe[i] =  xRe[i]*cosT[i] + xIm[i]*sinT[i];
+    aIm[i] = -xRe[i]*sinT[i] + xIm[i]*cosT[i];
+  }
+  const bRe = new Float64Array(m), bIm = new Float64Array(m);
+  bRe[0]=cosT[0]; bIm[0]=sinT[0];
+  for(let i=1;i<n;i++){
+    bRe[i]=bRe[m-i]=cosT[i];
+    bIm[i]=bIm[m-i]=sinT[i];
+  }
+  const [cRe,cIm] = circularConvolve(m, aRe, aIm, bRe, bIm);
+  const outRe = new Float64Array(n), outIm = new Float64Array(n);
+  for(let i=0;i<n;i++){
+    outRe[i] =  cRe[i]*cosT[i] + cIm[i]*sinT[i];
+    outIm[i] = -cRe[i]*sinT[i] + cIm[i]*cosT[i];
+  }
+  return [outRe, outIm];
+}
+
+// full-length DFT of arbitrary size, dispatching to the fast path when possible
+function fftExact(re, im){
+  const n = re.length;
+  if(n>0 && (n & (n-1))===0){ fftRadix2(re, im); return [re, im]; }
+  return bluesteinFFT(re, im);
+}
+
+let fftCache = null; // {key, freqs, mag}
+function computeFFT(){
+  if(!data) return null;
+  const ci = fftCfg.chan;
+  const cacheKey = ci+'|'+fftCfg.window;
+  if(fftCache && fftCache.key===cacheKey) return fftCache;
+
+  const vals = data.channels[ci].values;
+  const N = vals.length; // no zero-padding: FFT size == sample count, matching np.fft.rfft(x*window)
+  const win = windowFn(fftCfg.window, N);
+  const re = new Float64Array(N);
+  const im = new Float64Array(N);
+  let winSum=0;
+  for(let i=0;i<N;i++){ re[i]=vals[i]*win[i]; winSum+=win[i]; }
+  const [outRe, outIm] = fftExact(re, im);
+
+  const dt = estDt();
+  const fs = 1/dt;
+  const half = Math.floor(N/2)+1; // matches numpy.fft.rfftfreq(N, d=1/fs) length
+  const freqs = new Float64Array(half);
+  const mag = new Float64Array(half);
+  const ampScale = 2/(winSum||N); // (2/sum(window)) * |rfft(x*window)|
+  for(let k=0;k<half;k++){
+    freqs[k] = k*fs/N;
+    mag[k] = Math.sqrt(outRe[k]*outRe[k]+outIm[k]*outIm[k]) * ampScale;
+  }
+  fftCache = { key:cacheKey, freqs, mag, fs, N };
+  return fftCache;
+}
+
+function getNyquist(){
+  const res = computeFFT();
+  return res ? res.freqs[res.freqs.length-1] : 1;
+}
+
+function getFftRange(){
+  const nyq = getNyquist();
+  const fMin = Math.max(0, Math.min(fftView.fMin||0, nyq*0.999));
+  let fMax = (fftView.fMax==null || !Number.isFinite(fftView.fMax)) ? nyq : Math.min(fftView.fMax, nyq);
+  if(fMax<=fMin) fMax = nyq;
+  return [fMin, fMax];
+}
+
+function magAt(res, freq){
+  const k = Math.min(res.mag.length-1, Math.max(0, Math.round(freq/res.fs*res.N)));
+  return res.mag[k];
+}
+
+// topographic prominence of a local maximum at index k, restricted to [k0,k1]:
+// the drop to the lowest point on the way to a taller point (or the range edge) on each side.
+function peakProminence(mag, k0, k1, k){
+  const v = mag[k];
+  let leftMin = v;
+  for(let i=k-1;i>=k0;i--){
+    if(mag[i]>v) break;
+    if(mag[i]<leftMin) leftMin = mag[i];
+  }
+  let rightMin = v;
+  for(let i=k+1;i<=k1;i++){
+    if(mag[i]>v) break;
+    if(mag[i]<rightMin) rightMin = mag[i];
+  }
+  return v - Math.max(leftMin, rightMin);
+}
+
+// mirrors: peaks,_ = find_peaks(m_plot, prominence=max(max(m_plot)*0.05, 1e-9)); then top-N by amplitude
+function findPeaks(res, fMin, fMax, count){
+  if(count<=0) return [];
+  const { freqs, mag } = res;
+  const k0 = Math.max(1, Math.floor(fMin/res.fs*res.N));
+  const k1 = Math.min(mag.length-2, Math.ceil(fMax/res.fs*res.N));
+  if(k1<=k0) return [];
+  let maxVal = 0;
+  for(let k=k0;k<=k1;k++) if(mag[k]>maxVal) maxVal = mag[k];
+  const promThreshold = Math.max(maxVal*0.05, 1e-9);
+  const candidates = [];
+  for(let k=k0+1;k<k1;k++){
+    if(mag[k]>mag[k-1] && mag[k]>=mag[k+1]){
+      const prom = peakProminence(mag, k0, k1, k);
+      if(prom>=promThreshold) candidates.push({k, freq:freqs[k], mag:mag[k], prom});
+    }
+  }
+  candidates.sort((a,b)=>b.mag-a.mag);
+  return candidates.slice(0, count);
+}
+
+function renderFFT(dpr){
+  if(!data) return;
+  const W=fftCanvas.width, H=fftCanvas.height;
+  const divsX=10, divsY=8;
+  drawGrid(fftCtx, W, H, divsX, divsY);
+  const res = computeFFT();
+  if(!res){ $('peaksBody').innerHTML=''; return; }
+  const { mag } = res;
+  const [fMin,fMax] = getFftRange();
+  const useDb = fftCfg.scale==='db';
+  const unit = data.channels[fftCfg.chan] ? data.channels[fftCfg.chan].unit : 'V';
+
+  // max magnitude within the visible window, used as the reference level
+  const k0 = Math.max(0, Math.floor(fMin/res.fs*res.N));
+  const k1 = Math.min(mag.length-1, Math.ceil(fMax/res.fs*res.N));
+  let maxMagVisible = 1e-12;
+  for(let k=k0;k<=k1;k++) if(mag[k]>maxMagVisible) maxMagVisible = mag[k];
+
+  let dbCeil=0, dbFloor=-100, linTop=1e-12;
+  if(useDb){
+    dbCeil = Math.ceil((20*Math.log10(maxMagVisible)+6)/10)*10;
+    dbFloor = dbCeil-100;
+  } else {
+    // like matplotlib's ylim(bottom=0) with a small auto-margin above the tallest peak
+    linTop = maxMagVisible*1.15;
+  }
+
+  // axis labels
+  fftCtx.font = (10*dpr)+'px ui-monospace, monospace';
+  fftCtx.fillStyle = 'rgba(231,236,239,0.5)';
+  fftCtx.textAlign='center'; fftCtx.textBaseline='top';
+  for(let i=0;i<=divsX;i++){
+    const f = fMin + (i/divsX)*(fMax-fMin);
+    fftCtx.fillText(fmtHz(f), (i/divsX)*W, H-14*dpr);
+  }
+  fftCtx.textAlign='left'; fftCtx.textBaseline='middle';
+  for(let j=0;j<=divsY;j++){
+    const y = (j/divsY)*H;
+    let label;
+    if(useDb){ label = (dbCeil - (j/divsY)*(dbCeil-dbFloor)).toFixed(0)+' dB'; }
+    else { const val = linTop*(1 - j/divsY); label = fmtVal(val, unit); }
+    fftCtx.fillText(label, 4*dpr, Math.max(8*dpr, y+ (j===0?8*dpr:0)));
+  }
+
+  // trace
+  const chIdx = fftCfg.chan;
+  fftCtx.strokeStyle = chState[chIdx] ? chState[chIdx].color : '#35d7e0';
+  fftCtx.lineWidth = 1.6*dpr;
+  fftCtx.beginPath();
+  for(let px=0; px<W; px++){
+    const freq = fMin + (px/W)*(fMax-fMin);
+    const m = magAt(res, freq);
+    let norm;
+    if(useDb){
+      const db = 20*Math.log10(m||1e-12);
+      norm = (db-dbFloor)/(dbCeil-dbFloor);
+    } else {
+      norm = m/linTop;
+    }
+    norm = Math.max(0, Math.min(1, norm));
+    const y = H - norm*H;
+    if(px===0) fftCtx.moveTo(px,y); else fftCtx.lineTo(px,y);
+  }
+  fftCtx.stroke();
+  // fill under curve, subtle (like ax4.fill_between(..., alpha=0.15))
+  fftCtx.lineTo(W,H); fftCtx.lineTo(0,H); fftCtx.closePath();
+  fftCtx.fillStyle = (chState[chIdx]?chState[chIdx].color:'#35d7e0')+'26';
+  fftCtx.fill();
+
+  // peaks
+  const peaks = findPeaks(res, fMin, fMax, fftCfg.peakCount);
+  const byFreq = peaks.slice().sort((a,b)=>a.freq-b.freq);
+  byFreq.forEach((p, i)=>{
+    const rank = peaks.indexOf(p)+1;
+    const px = ((p.freq-fMin)/(fMax-fMin))*W;
+    const db = 20*Math.log10(p.mag||1e-12);
+    const norm = useDb ? (db-dbFloor)/(dbCeil-dbFloor) : p.mag/linTop;
+    const py = H - Math.max(0,Math.min(1,norm))*H;
+    fftCtx.strokeStyle='rgba(255,255,255,0.45)'; fftCtx.setLineDash([3,3]); fftCtx.lineWidth=1*dpr;
+    fftCtx.beginPath(); fftCtx.moveTo(px,py); fftCtx.lineTo(px,H); fftCtx.stroke();
+    fftCtx.setLineDash([]);
+    // marker dot
+    fftCtx.fillStyle='#ffffff';
+    fftCtx.beginPath(); fftCtx.arc(px,py,3*dpr,0,Math.PI*2); fftCtx.fill();
+    // two-line label: "#rank  freq" then amplitude, like ax4.annotate(f"{f:.1f} Hz\n{m...}")
+    const line1 = `#${rank} ${fmtHz(p.freq)}`;
+    const line2 = fmtVal(p.mag, unit);
+    fftCtx.font=(10.5*dpr)+'px ui-monospace, monospace';
+    const tw = Math.max(fftCtx.measureText(line1).width, fftCtx.measureText(line2).width);
+    const labelY = Math.max(30*dpr, py - 20*dpr - (i%3)*30*dpr);
+    let tx = px+6*dpr;
+    if(tx+tw>W-4*dpr) tx = px-6*dpr-tw;
+    fftCtx.fillStyle='#0a0e0ad9';
+    fftCtx.fillRect(tx-3*dpr, labelY-24*dpr, tw+6*dpr, 26*dpr);
+    fftCtx.textAlign='left'; fftCtx.textBaseline='middle';
+    fftCtx.fillStyle='#ffffff';
+    fftCtx.fillText(line1, tx, labelY-16*dpr);
+    fftCtx.fillStyle='rgba(255,255,255,0.75)';
+    fftCtx.fillText(line2, tx, labelY-3*dpr);
+  });
+
+  fftCtx.textAlign='left'; fftCtx.textBaseline='alphabetic';
+  fftCtx.fillStyle='rgba(231,236,239,0.55)';
+  fftCtx.font=(11*dpr)+'px ui-monospace, monospace';
+  fftCtx.fillText((useDb?'dB':'Linear')+' · '+ (chState[chIdx]?data.channels[chIdx].name:''), 6*dpr, 14*dpr);
+
+  const binRes = res.fs/res.N;
+  $('fftInfo').textContent = `Bin size ${fmtHz(binRes)} · N=${res.N} · Fs=${fmtHz(res.fs)} · View ${fmtHz(fMin)}–${fmtHz(fMax)}`;
+
+  renderPeaksTable(peaks, chIdx);
+}
+
+function renderPeaksTable(peaks, chIdx){
+  const grp = $('peaksGroup');
+  if(view!=='fft' && view!=='both'){ return; }
+  const unit = data.channels[chIdx] ? data.channels[chIdx].unit : 'V';
+  $('peaksSubtitle').textContent = data.channels[chIdx] ? '— '+data.channels[chIdx].name : '';
+  if(peaks.length===0){
+    $('peaksBody').innerHTML = `<tr><td colspan="4" style="color:var(--text-dim)">No peaks in this range. Try increasing "Peaks to label" or widening F min/F max.</td></tr>`;
+    return;
+  }
+  const ranked = peaks.slice().sort((a,b)=>b.mag-a.mag);
+  $('peaksBody').innerHTML = ranked.map((p,i)=>{
+    const db = 20*Math.log10(p.mag||1e-12);
+    return `<tr>
+      <td>#${i+1}</td>
+      <td>${fmtHz(p.freq)}</td>
+      <td>${fmtVal(p.mag, unit)}</td>
+      <td>${db.toFixed(1)} dB</td>
+    </tr>`;
+  }).join('');
+}
+
+// pan + zoom on the FFT screen (frequency axis)
+fftCanvas.addEventListener('pointerdown', (e)=>{
+  if(!data) return;
+  const rect = fftCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio||1;
+  const x = (e.clientX-rect.left)*dpr;
+  fftDrag = { startX:x, startRange:getFftRange() };
+  fftCanvas.setPointerCapture(e.pointerId);
+});
+fftCanvas.addEventListener('pointermove', (e)=>{
+  if(!fftDrag || !data) return;
+  const rect = fftCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio||1;
+  const x = (e.clientX-rect.left)*dpr;
+  const W = fftCanvas.width;
+  const [f0,f1] = fftDrag.startRange;
+  const span = f1-f0;
+  const dFreq = -((x-fftDrag.startX)/W)*span;
+  let newMin = Math.max(0, f0+dFreq);
+  let newMax = newMin+span;
+  const nyq = getNyquist();
+  if(newMax>nyq){ newMax=nyq; newMin=newMax-span; if(newMin<0) newMin=0; }
+  fftView.fMin = newMin; fftView.fMax = newMax;
+  $('fftFMin').value = newMin.toFixed(1);
+  $('fftFMax').value = newMax.toFixed(1);
+  render();
+});
+['pointerup','pointercancel'].forEach(evt=>fftCanvas.addEventListener(evt, ()=>{ fftDrag=null; }));
+fftCanvas.addEventListener('wheel', (e)=>{
+  if(!data) return;
+  e.preventDefault();
+  const rect = fftCanvas.getBoundingClientRect();
+  const x = e.clientX-rect.left;
+  const W = rect.width;
+  const [f0,f1] = getFftRange();
+  const span = f1-f0;
+  const centerFrac = Math.min(1,Math.max(0, x/W));
+  const centerFreq = f0 + centerFrac*span;
+  const zoom = e.deltaY<0 ? 0.8 : 1.25;
+  let newSpan = Math.max(span*zoom, getNyquist()/2000);
+  let newMin = centerFreq - centerFrac*newSpan;
+  let newMax = newMin+newSpan;
+  const nyq = getNyquist();
+  if(newMin<0){ newMax-=newMin; newMin=0; }
+  if(newMax>nyq){ newMin-=(newMax-nyq); newMax=nyq; if(newMin<0)newMin=0; }
+  fftView.fMin=newMin; fftView.fMax=newMax;
+  $('fftFMin').value = newMin.toFixed(1);
+  $('fftFMax').value = newMax.toFixed(1);
+  render();
+}, {passive:false});
+
+// invalidate FFT cache when data or window changes
+const _origLoadData = loadData;
+window.addEventListener('DOMContentLoaded', ()=>{ resizeCanvases(); });
+
+// re-render measurements/cursors when scrolling time position via keyboard (optional nicety)
+document.addEventListener('keydown', (e)=>{
+  if(!data) return;
+  if(e.target.tagName==='INPUT' || e.target.tagName==='SELECT') return;
+  const [tStart,tEnd]=visibleRange();
+  const step=(tEnd-tStart)*0.05;
+  if(e.key==='ArrowLeft'){ hPositionSec-=step; render(); }
+  if(e.key==='ArrowRight'){ hPositionSec+=step; render(); }
+});
+
+// initial paint
+resizeCanvases();
+render();
+
+// wrap fftCfg change to bust cache
+['fftChan','fftWindow'].forEach(id=>{
+  $(id).addEventListener('change', ()=>{ fftCache=null; });
+});
+
+})();
+</script>
+</body>
+</html>
